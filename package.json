@@ -1,0 +1,14 @@
+{
+  "name": "voice-english-query",
+  "version": "1.0.0",
+  "description": "语音英语查询 - 按住说话查单词，中英双语，词库有道",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
