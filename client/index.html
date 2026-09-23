@@ -249,14 +249,21 @@
     });
   }
 
-  // 有道单词发音（美音 mp3）。播放完立即释放，避免占用识别音频通道。
-  function playYoudaoVoice(word) {
-    var a = document.createElement('audio');
-    a.src = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=2';
-    audioPool.push(a);
-    a.onended = function () { releaseAudio(a); };
-    a.onerror = function () { releaseAudio(a); };
-    a.play().catch(function () { releaseAudio(a); /* 自动播放被拦时静默 */ });
+  // 单词发音：使用系统自带语音合成（speechSynthesis）。
+  // 不用网络 mp3 音频元素 —— iOS 上播放网络音频会占用/破坏音频会话，
+  // 导致语音识别 start() 失败（点击单词读音后识别就失效的根因）。
+  // 系统 TTS 与识别器同为系统语音服务，可共存。
+  function speakWord(word) {
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(word);
+      u.lang = 'en-US';
+      u.rate = 0.75;   // 稍慢，适合小朋友跟读
+      u.pitch = 1;
+      u.volume = 1;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* 不支持时静默 */ }
   }
 
   // 停止并释放一个音频元素（清空 src，释放系统音频通道）
@@ -268,6 +275,8 @@
 
   // 停止当前所有音频（识别启动前调用，确保麦克风通道不被占用）
   function stopAllAudio() {
+    // 停止系统 TTS 朗读
+    try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     for (var i = 0; i < audioPool.length; i++) {
       try {
         var a = audioPool[i];
@@ -279,19 +288,19 @@
     audioPool = [];
   }
 
-  // iOS 自动播放解锁：必须在用户点击手势内首次播放音频，
-  // 之后识别结果返回的自动朗读（单词音）才能正常出声。
-  // 用一个超短静音音频在手势内“预热”播放通道。
+  // iOS 自动播放解锁：语音合成（speechSynthesis）和语音识别一样，
+  // 必须在用户手势内先调用一次才能解锁后续自动朗读。
+  // 在手势内空读一次（无声音），为识别结果返回后的自动朗读“预热”。
+  // 刻意不使用 audio 元素 —— iOS 上任何网络音频播放都会占用音频会话、破坏识别。
   function unlockAutoplay() {
-    var a = document.createElement('audio');
-    a.preload = 'auto';
-    // 100ms 静音 wav（base64），播放时无声音，仅用于解锁
-    a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-    a.volume = 0;
-    audioPool.push(a);
-    a.onended = function () { releaseAudio(a); };
-    a.onerror = function () { releaseAudio(a); };
-    a.play().catch(function () { releaseAudio(a); });
+    try {
+      if ('speechSynthesis' in window) {
+        var u = new SpeechSynthesisUtterance(' ');
+        u.volume = 0;
+        u.rate = 10;
+        window.speechSynthesis.speak(u);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // ---------- 逐字母真人拼读 ----------
@@ -369,9 +378,9 @@
     // 只读单词（有道美音），拼写仅展示
     // delayAudio=true：识别路径在会话结束后再播放，避免破坏 iOS 音频会话导致下次识别失败
     if (delayAudio) {
-      setTimeout(function () { playYoudaoVoice(data.word); }, 800);
+      setTimeout(function () { speakWord(data.word); }, 800);
     } else {
-      playYoudaoVoice(data.word);
+      speakWord(data.word);
     }
     // 渲染候选词（识别/查询的模糊备选）
     candidatesEl.innerHTML = '';
@@ -690,7 +699,7 @@
     if (currentResult) {
       unlockAutoplay();
       setStatus('重复朗读：' + currentResult.word);
-      playYoudaoVoice(currentResult.word);
+      speakWord(currentResult.word);
     }
   });
 
