@@ -75,13 +75,22 @@
     font-size: 16px; color: #5b6b7d; margin-top: 12px; line-height: 1.6;
     max-height: 76px; overflow-y: auto;
   }
-  .result .spell-row { margin-top: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .result .spell-row { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
   .result .spell-row .letter {
-    width: 44px; height: 44px; line-height: 44px; text-align: center;
-    background: #eef4ff; color: #2563eb; border-radius: 10px;
-    font-size: 22px; font-weight: 700; transition: background .15s, color .15s, transform .15s;
+    width: 26px; height: 26px; line-height: 26px; text-align: center;
+    background: #eef4ff; color: #2563eb; border-radius: 6px;
+    font-size: 14px; font-weight: 700;
   }
-  .result .spell-row .letter.active { background: #2563eb; color: #fff; transform: scale(1.12); }
+  .result .spell-row .letter.active { background: #2563eb; color: #fff; }
+  .result .candidates {
+    margin-top: 12px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+  }
+  .result .candidates .cand {
+    border: 1.5px solid #d3dce8; background: #f6f9fd; color: #2563eb;
+    font-size: 14px; font-weight: 600; padding: 5px 12px; border-radius: 16px;
+    cursor: pointer;
+  }
+  .result .candidates .cand:active { background: #2563eb; color: #fff; }
 
   /* 圆形按钮（扁平） */
   .btn-wrap { position: relative; display: flex; justify-content: center; margin-bottom: 18px; }
@@ -157,9 +166,10 @@
     <div class="placeholder" id="placeholder">👇 点一下按钮开始听<br>说完再点一下开始识别</div>
     <div class="result" id="result">
       <div class="word" id="word"></div>
-      <div class="hint-tap">👆 点击单词 重复读拼写</div>
+      <div class="hint-tap">👆 点击单词 重复朗读</div>
       <div class="meaning" id="meaning"></div>
       <div class="spell-row" id="spellRow"></div>
+      <div class="candidates" id="candidates"></div>
     </div>
   </div>
 
@@ -191,7 +201,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var placeholder = $('placeholder'), resultEl = $('result');
-  var wordEl = $('word'), meaningEl = $('meaning'), spellRow = $('spellRow');
+  var wordEl = $('word'), meaningEl = $('meaning'), spellRow = $('spellRow'), candidatesEl = $('candidates');
   var micBtn = $('micBtn'), micIcon = $('micIcon'), micText = $('micText');
   var statusEl = $('status'), pulseRing = $('pulseRing'), errorBox = $('errorBox');
   var modeSwitch = $('modeSwitch'), inputMode = $('inputMode'), textInput = $('textInput'), textBtn = $('textBtn');
@@ -342,9 +352,26 @@
     });
     showError('');
     setStatus('已找到：' + data.word + '，正在朗读…');
-    // 先读单词（有道美音），稍候逐字母拼读
+    // 只读单词（有道美音），拼写仅展示
     playYoudaoVoice(data.word);
-    setTimeout(function () { animateSpelling(data.word); }, data.word.length > 6 ? 1700 : 1300);
+    // 渲染候选词（识别/查询的模糊备选）
+    candidatesEl.innerHTML = '';
+    var cands = data.candidates || [];
+    var shown = 0;
+    for (var ci = 0; ci < cands.length && shown < 5; ci++) {
+      var cw = cands[ci];
+      if (!cw || cw === data.word || cw.indexOf(data.word) === 0) continue;
+      (function (w) {
+        var b = document.createElement('button');
+        b.className = 'cand';
+        b.textContent = w;
+        b.onclick = function () { doQuery(w); };
+        candidatesEl.appendChild(b);
+        shown++;
+      })(cw);
+    }
+    if (shown === 0) candidatesEl.style.display = 'none';
+    else candidatesEl.style.display = 'flex';
   }
 
   // ---------- 查询（中→英 / 英→中） ----------
@@ -366,21 +393,26 @@
 
     if (isChinese(q)) {
       youdaoSuggest(q).then(function (entries) {
-        var en = null;
+        // 收集所有候选英文词（模糊备选：识别成"绘画"时，用户可点选其他候选）
+        var cands = [];
         for (var i = 0; i < entries.length; i++) {
           var e = entries[i].explain;
-          if (typeof e === 'string' && /^[a-zA-Z][a-zA-Z\s'-]*$/.test(e.trim())) {
-            en = e.trim().split(/\s+/)[0].toLowerCase();
-            break;
+          if (typeof e === 'string' && /[a-zA-Z]/.test(e)) {
+            var words = e.trim().split(/[;\s,，]+/);
+            for (var w = 0; w < words.length; w++) {
+              var wt = words[w].trim().toLowerCase();
+              if (/^[a-zA-Z][a-zA-Z'-]*$/.test(wt) && cands.indexOf(wt) < 0) cands.push(wt);
+            }
           }
         }
-        if (!en) { fail('没有找到该词对应的英文'); return; }
+        if (!cands.length) { fail('没有找到该词对应的英文'); return; }
+        var en = cands[0];
         youdaoSuggest(en).then(function (enEntries) {
           var meaning = '';
           if (enEntries && enEntries.length) meaning = enEntries[0].explain || '';
-          finish({ query: q, lang: 'zh', word: en, meaning: meaning, spelling: en.split('') });
+          finish({ query: q, lang: 'zh', word: en, meaning: meaning, spelling: en.split(''), candidates: cands });
         }).catch(function () {
-          finish({ query: q, lang: 'zh', word: en, meaning: '', spelling: en.split('') });
+          finish({ query: q, lang: 'zh', word: en, meaning: '', spelling: en.split(''), candidates: cands });
         });
       }).catch(function () { fail('网络异常，请检查网络后重试'); });
     } else {
@@ -388,7 +420,12 @@
         if (!entries || !entries.length) { fail('没有找到该单词'); return; }
         var en = entries[0].entry;
         var meaning = entries[0].explain || '';
-        finish({ query: q, lang: 'en', word: en, meaning: meaning, spelling: en.split('') });
+        var cands = [];
+        for (var i = 0; i < entries.length; i++) {
+          var et = entries[i].entry;
+          if (et && cands.indexOf(et) < 0) cands.push(et);
+        }
+        finish({ query: q, lang: 'en', word: en, meaning: meaning, spelling: en.split(''), candidates: cands });
       }).catch(function () { fail('网络异常，请检查网络后重试'); });
     }
   }
@@ -416,6 +453,10 @@
     r.interimResults = true;
     r.continuous = false;
     r.maxAlternatives = 3;
+    r._started = false;
+    r.onstart = function () {
+      r._started = true;
+    };
     r.onresult = function (ev) {
       var interim = '', final = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
@@ -473,8 +514,8 @@
   function startRecog() {
     if (!useVoice) return;
     if (recognizing) return;
-    // 距上次识别结束不足 700ms 时等待，让系统释放音频/麦克风通道（iOS 常见问题）
-    var wait = 700 - (Date.now() - lastMicEnd);
+    // 距上次识别结束不足 1200ms 时等待，让系统彻底释放音频/麦克风通道（iOS 常见问题）
+    var wait = 1200 - (Date.now() - lastMicEnd);
     if (wait > 0) {
       setTimeout(function () { startRecog(); }, wait);
       return;
@@ -494,6 +535,15 @@
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
     setStatus('正在听，请说出' + (recogLang === 'zh-CN' ? '中文或英文' : '英文单词') + '…');
+    // 启动确认：2.5 秒后若识别器未真正启动（无 onstart 也无错误），视为静默失败并自动重试一次
+    recog._bootTimer = setTimeout(function () {
+      if (recognizing && recog && !recog._started && !recog._retried) {
+        recog._retried = true;
+        try { recog.abort(); } catch (e) { /* ignore */ }
+        setStatus('识别没有启动，正在重试…');
+        setTimeout(function () { startRecog(); }, 500);
+      }
+    }, 2500);
     // 超时自检：8 秒没有任何识别事件则自动停止，避免识别器卡死
     var idleTimer = setTimeout(function () {
       if (recognizing) {
@@ -506,6 +556,7 @@
     try {
       recog.start();
     } catch (e) {
+      clearTimeout(recog._bootTimer);
       clearTimeout(recog._idleTimer);
       resetMicUI();
       setStatus('识别启动失败，请再点一次');
@@ -516,6 +567,7 @@
     if (!useVoice || !recognizing) return;
     // 再次点击：立即复位界面，并停止识别触发结果
     if (recog && recog._idleTimer) clearTimeout(recog._idleTimer);
+    if (recog && recog._bootTimer) clearTimeout(recog._bootTimer);
     resetMicUI();
     try { recog.stop(); } catch (e) { /* ignore */ }
   }
@@ -554,11 +606,11 @@
     });
   });
 
-  // 点击单词 → 重复读拼写（真人式逐字母停顿）
+  // 点击单词 → 重复朗读单词
   wordEl.addEventListener('click', function () {
     if (currentResult) {
-      setStatus('重复朗读拼写：' + currentResult.word);
-      animateSpelling(currentResult.word);
+      setStatus('重复朗读：' + currentResult.word);
+      playYoudaoVoice(currentResult.word);
     }
   });
 
