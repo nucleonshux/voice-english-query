@@ -206,6 +206,8 @@
   var jsonpSeq = 0;
   var spellSpeaking = false;
   var spellAudios = [];    // 当前拼读用到的 audio 元素
+  var audioPool = [];      // 本次页面内创建过的所有 audio 元素（统一释放通道）
+  var lastMicEnd = 0;      // 上次识别会话结束时间戳（启动冷却用）
 
   // ---------- 界面状态 ----------
   function showError(msg) {
@@ -238,11 +240,34 @@
     });
   }
 
-  // 有道单词发音（美音 mp3）
+  // 有道单词发音（美音 mp3）。播放完立即释放，避免占用识别音频通道。
   function playYoudaoVoice(word) {
     var a = document.createElement('audio');
     a.src = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=2';
-    a.play().catch(function () { /* 自动播放被拦时静默 */ });
+    audioPool.push(a);
+    a.onended = function () { releaseAudio(a); };
+    a.onerror = function () { releaseAudio(a); };
+    a.play().catch(function () { releaseAudio(a); /* 自动播放被拦时静默 */ });
+  }
+
+  // 停止并释放一个音频元素（清空 src，释放系统音频通道）
+  function releaseAudio(a) {
+    try { a.pause(); a.removeAttribute('src'); a.load(); } catch (e) { /* ignore */ }
+    var i = audioPool.indexOf(a);
+    if (i >= 0) audioPool.splice(i, 1);
+  }
+
+  // 停止当前所有音频（识别启动前调用，确保麦克风通道不被占用）
+  function stopAllAudio() {
+    for (var i = 0; i < audioPool.length; i++) {
+      try {
+        var a = audioPool[i];
+        a.pause();
+        a.removeAttribute('src');
+        a.load();
+      } catch (e) { /* ignore */ }
+    }
+    audioPool = [];
   }
 
   // ---------- 逐字母真人拼读 ----------
@@ -263,6 +288,7 @@
       a.src = 'https://dict.youdao.com/dictvoice?audio=' +
         encodeURIComponent(word[i].toLowerCase()) + '&type=2';
       spellAudios.push(a);
+      audioPool.push(a);
     }
 
     var idx = 0;
@@ -294,11 +320,7 @@
 
   function clearSpell() {
     spellSpeaking = false;
-    // 停止并释放所有拼读音频
-    for (var i = 0; i < spellAudios.length; i++) {
-      try { spellAudios[i].pause(); } catch (e) { /* ignore */ }
-    }
-    spellAudios = [];
+    stopAllAudio();
   }
 
   // ---------- 渲染结果 ----------
@@ -380,6 +402,7 @@
 
   function resetMicUI() {
     recognizing = false;
+    lastMicEnd = Date.now();
     micBtn.classList.remove('recording');
     micText.textContent = '开始听';
     micIcon.textContent = '🎤';
@@ -429,8 +452,16 @@
       } else if (ev.error === 'aborted') {
         resetMicUI();
       } else {
-        resetMicUI();
-        setStatus('识别出错：' + ev.error + '，请再点一次');
+        // 非权限类错误：自动重试一次（如网络/音频通道冲突导致的偶发失败）
+        if (!r._retried) {
+          r._retried = true;
+          resetMicUI();
+          setStatus('识别未响应，正在重试…');
+          setTimeout(function () { startRecog(); }, 700);
+        } else {
+          resetMicUI();
+          setStatus('识别出错：' + ev.error + '，请再点一次');
+        }
       }
     };
     r.onend = function () {
@@ -442,8 +473,19 @@
   function startRecog() {
     if (!useVoice) return;
     if (recognizing) return;
-    // 先停止朗读，释放音频通道（否则部分浏览器识别启动失败）
+    // 距上次识别结束不足 700ms 时等待，让系统释放音频/麦克风通道（iOS 常见问题）
+    var wait = 700 - (Date.now() - lastMicEnd);
+    if (wait > 0) {
+      setTimeout(function () { startRecog(); }, wait);
+      return;
+    }
+    // 先彻底停止所有朗读音频，释放音频通道（否则部分浏览器识别启动失败）
     clearSpell();
+    // 终止可能残留的旧识别会话
+    if (recog) {
+      try { recog.abort(); } catch (e) { /* ignore */ }
+      recog = null;
+    }
     recognizing = true;
     recogLang = currentLang();
     recog = createRecog(recogLang);
