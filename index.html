@@ -155,8 +155,7 @@
   </div>
 
   <div class="lang-switch" id="langSwitch">
-    <button data-lang="auto" class="active">自动</button>
-    <button data-lang="zh">中文</button>
+    <button data-lang="zh" class="active">中文</button>
     <button data-lang="en">English</button>
   </div>
 
@@ -212,7 +211,7 @@
   var recognizing = false;
   var recog = null;
   var recogLang = 'zh-CN';
-  var langMode = 'auto';   // auto | zh | en
+  var langMode = 'zh';   // zh | en
   var jsonpSeq = 0;
   var spellSpeaking = false;
   var spellAudios = [];    // 当前拼读用到的 audio 元素
@@ -278,6 +277,21 @@
       } catch (e) { /* ignore */ }
     }
     audioPool = [];
+  }
+
+  // iOS 自动播放解锁：必须在用户点击手势内首次播放音频，
+  // 之后识别结果返回的自动朗读（单词音）才能正常出声。
+  // 用一个超短静音音频在手势内“预热”播放通道。
+  function unlockAutoplay() {
+    var a = document.createElement('audio');
+    a.preload = 'auto';
+    // 100ms 静音 wav（base64），播放时无声音，仅用于解锁
+    a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+    a.volume = 0;
+    audioPool.push(a);
+    a.onended = function () { releaseAudio(a); };
+    a.onerror = function () { releaseAudio(a); };
+    a.play().catch(function () { releaseAudio(a); });
   }
 
   // ---------- 逐字母真人拼读 ----------
@@ -432,9 +446,7 @@
 
   // ---------- 语音识别（点击开始/停止） ----------
   function currentLang() {
-    if (langMode === 'zh') return 'zh-CN';
-    if (langMode === 'en') return 'en-US';
-    return 'zh-CN'; // auto 默认先中文
+    return langMode === 'en' ? 'en-US' : 'zh-CN';
   }
 
   function resetMicUI() {
@@ -466,14 +478,6 @@
       }
       if (interim) {
         setStatus('正在听：' + interim);
-        // 自动模式下根据 interim 智能切换语言
-        if (langMode === 'auto') {
-          if (recogLang === 'zh-CN' && !/[\u4e00-\u9fa5]/.test(interim) && /[a-zA-Z]/.test(interim)) {
-            switchTo('en-US');
-          } else if (recogLang === 'en-US' && /[\u4e00-\u9fa5]/.test(interim)) {
-            switchTo('zh-CN');
-          }
-        }
       }
       if (final) {
         setStatus('识别到：' + final);
@@ -514,14 +518,12 @@
   function startRecog() {
     if (!useVoice) return;
     if (recognizing) return;
-    // 距上次识别结束不足 1200ms 时等待，让系统彻底释放音频/麦克风通道（iOS 常见问题）
-    var wait = 1200 - (Date.now() - lastMicEnd);
-    if (wait > 0) {
-      setTimeout(function () { startRecog(); }, wait);
-      return;
-    }
-    // 先彻底停止所有朗读音频，释放音频通道（否则部分浏览器识别启动失败）
+    // 关键：iOS 要求语音识别必须在用户点击手势内同步启动，
+    // 任何 setTimeout 延迟都会让 start() 脱离手势上下文而被系统拒绝（表现为“点了没反应/说了话也说没识别到”）。
+    // 因此这里全部同步执行：先停音频（同步）、abort 旧会话（同步）、立即 start()。
     clearSpell();
+    stopAllAudio();
+    unlockAutoplay();
     // 终止可能残留的旧识别会话
     if (recog) {
       try { recog.abort(); } catch (e) { /* ignore */ }
@@ -534,14 +536,14 @@
     micIcon.textContent = '🎙️';
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
-    setStatus('正在听，请说出' + (recogLang === 'zh-CN' ? '中文或英文' : '英文单词') + '…');
-    // 启动确认：2.5 秒后若识别器未真正启动（无 onstart 也无错误），视为静默失败并自动重试一次
+    setStatus('正在听，请说出' + (recogLang === 'en' ? '英文单词' : '中文或英文') + '…');
+    // 启动确认：2.5 秒后若识别器未真正启动（无 onstart 也无错误），复位提示
     recog._bootTimer = setTimeout(function () {
       if (recognizing && recog && !recog._started && !recog._retried) {
         recog._retried = true;
         try { recog.abort(); } catch (e) { /* ignore */ }
-        setStatus('识别没有启动，正在重试…');
-        setTimeout(function () { startRecog(); }, 500);
+        resetMicUI();
+        setStatus('识别没有响应，请再点一次');
       }
     }, 2500);
     // 超时自检：8 秒没有任何识别事件则自动停止，避免识别器卡死
@@ -565,7 +567,8 @@
 
   function stopRecog() {
     if (!useVoice || !recognizing) return;
-    // 再次点击：立即复位界面，并停止识别触发结果
+    // 再次点击：手势内解锁自动播放，立即复位界面，并停止识别触发结果
+    unlockAutoplay();
     if (recog && recog._idleTimer) clearTimeout(recog._idleTimer);
     if (recog && recog._bootTimer) clearTimeout(recog._bootTimer);
     resetMicUI();
@@ -578,7 +581,7 @@
     try { recog.stop(); } catch (e) { /* ignore */ }
     recognizing = false;
     setTimeout(function () {
-      if (!recognizing && langMode === 'auto') {
+      if (!recognizing) {
         recognizing = true;
         recog = createRecog(lang);
         try { recog.start(); } catch (e) { recognizing = false; }
@@ -601,14 +604,14 @@
       langBtns.forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
       if (langMode === 'en') setStatus('English 模式：点一下开始听，再说英文');
-      else if (langMode === 'zh') setStatus('中文模式：点一下开始听，再说中文');
-      else setStatus('自动模式：点一下开始听，中文英文都能识别');
+      else setStatus('中文模式：点一下开始听，再说中文');
     });
   });
 
-  // 点击单词 → 重复朗读单词
+  // 点击单词 → 重复朗读单词（手势内解锁自动播放）
   wordEl.addEventListener('click', function () {
     if (currentResult) {
+      unlockAutoplay();
       setStatus('重复朗读：' + currentResult.word);
       playYoudaoVoice(currentResult.word);
     }
