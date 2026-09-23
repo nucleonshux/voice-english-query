@@ -176,7 +176,7 @@
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
-  var placeholder = $('placeholder'), resultEl = $('result'), resultArea = $('resultArea');
+  var placeholder = $('placeholder'), resultEl = $('result');
   var wordEl = $('word'), phoneticEl = $('phonetic'), meaningEl = $('meaning'), spellRow = $('spellRow');
   var micBtn = $('micBtn'), micIcon = $('micIcon'), micText = $('micText');
   var statusEl = $('status'), pulseRing = $('pulseRing'), errorBox = $('errorBox');
@@ -187,9 +187,10 @@
   var currentResult = null;   // { word, phonetic, meaning, spelling, query, lang }
   var recognizing = false;
   var recog = null;
-  var recogLang = 'zh-CN';    // 当前识别器语言
+  var recogLang = 'zh-CN';
   var lastInterim = '';
   var speechSupported = 'speechSynthesis' in window;
+  var jsonpSeq = 0;
 
   // ---------- 界面状态 ----------
   function showError(msg) {
@@ -199,7 +200,45 @@
   }
   function setStatus(t) { statusEl.textContent = t; }
 
-  // ---------- 语音合成 ----------
+  // ---------- 有道 suggest JSONP 查询（纯静态，无跨域问题） ----------
+  // 返回 Promise<entries[]>：中→英 时 entries[i].explain 为英文翻译；
+  // 英→中 时 entries[i].entry 为英文单词、explain 为中文释义。
+  function youdaoSuggest(q) {
+    return new Promise(function (resolve, reject) {
+      var cb = 'ydcb_' + (++jsonpSeq);
+      var script = document.createElement('script');
+      var timer = setTimeout(function () {
+        cleanup();
+        reject(new Error('timeout'));
+      }, 12000);
+      function cleanup() {
+        clearTimeout(timer);
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+      window[cb] = function (data) {
+        cleanup();
+        var entries = (data && data.data && data.data.entries) || [];
+        resolve(entries);
+      };
+      script.src = 'https://dict.youdao.com/suggest?num=5&doctype=json&q=' +
+        encodeURIComponent(q) + '&callback=' + cb;
+      script.onerror = function () {
+        cleanup();
+        reject(new Error('network'));
+      };
+      document.body.appendChild(script);
+    });
+  }
+
+  // 有道单词发音（美音 mp3）
+  function playYoudaoVoice(word) {
+    var a = document.createElement('audio');
+    a.src = 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=2';
+    a.play().catch(function () { /* 自动播放被拦时静默 */ });
+  }
+
+  // ---------- 语音合成（拼读） ----------
   function pickVoice(langPrefix) {
     if (!speechSupported) return null;
     var voices = window.speechSynthesis.getVoices();
@@ -208,27 +247,12 @@
     }
     return null;
   }
-  function speak(text, lang, rate, pitch) {
-    if (!speechSupported) return;
-    window.speechSynthesis.cancel();
-    var u = new SpeechSynthesisUtterance(text);
-    u.lang = lang;
-    u.rate = rate || 0.95;
-    u.pitch = pitch || 1.05;
-    var v = pickVoice(lang);
-    if (v) u.voice = v;
-    window.speechSynthesis.speak(u);
-  }
 
   // 逐个字母高亮 + 朗读拼写
   function animateSpelling(word) {
     var letters = spellRow.children;
     var total = word.length;
-    var idx = 0;
-    // 拼读：字母逐个读（英文语音）
-    if (speechSupported) {
-      window.speechSynthesis.cancel();
-    }
+    if (speechSupported) window.speechSynthesis.cancel();
     var speakLetter = function (ch, i) {
       setTimeout(function () {
         for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
@@ -252,34 +276,13 @@
     for (var i = 0; i < total; i++) speakLetter(word[i], i);
   }
 
-  // 朗读单词发音
-  function speakWord(word) {
-    if (speechSupported) {
-      window.speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(word);
-      u.lang = 'en-US';
-      u.rate = 0.85;
-      u.pitch = 1.05;
-      var v = pickVoice('en');
-      if (v) u.voice = v;
-      window.speechSynthesis.speak(u);
-    }
-  }
-
-  // 完整播报：单词发音 + 拼写
-  function fullSpeak(result) {
-    if (!result) return;
-    speakWord(result.word);
-    setTimeout(function () { animateSpelling(result.word); }, result.word.length > 6 ? 1800 : 1400);
-  }
-
   // ---------- 渲染结果 ----------
   function renderResult(data) {
     currentResult = data;
     placeholder.style.display = 'none';
     resultEl.style.display = 'block';
     wordEl.textContent = data.word;
-    phoneticEl.textContent = data.phonetic ? ('/' + data.phonetic + '/') : '';
+    phoneticEl.textContent = data.phonetic || '';
     meaningEl.textContent = data.meaning || '';
     spellRow.innerHTML = '';
     data.spelling.forEach(function (ch) {
@@ -290,31 +293,58 @@
     });
     showError('');
     setStatus('已找到：' + data.word + '，正在朗读…');
-    fullSpeak(data);
+    // 完整播报：有道美音读单词 → 拼读
+    playYoudaoVoice(data.word);
+    setTimeout(function () { animateSpelling(data.word); }, data.word.length > 6 ? 1800 : 1400);
   }
 
-  // ---------- 查询 ----------
+  // ---------- 查询（中→英 / 英→中） ----------
+  function isChinese(s) { return /[\u4e00-\u9fa5]/.test(s); }
+
   function doQuery(q) {
     q = (q || '').trim();
     if (!q) { setStatus('请输入要查询的词语'); return; }
     setStatus('正在查询：' + q + ' …');
     showError('');
-    fetch('/api/lookup?q=' + encodeURIComponent(q))
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.code === 0) {
-          renderResult(res.data);
-        } else {
-          placeholder.style.display = 'block';
-          resultEl.style.display = 'none';
-          setStatus('没有找到结果');
-          showError(res.message || '查询失败，请换个词试试');
+
+    var finish = function (result) { renderResult(result); };
+    var fail = function (msg) {
+      placeholder.style.display = 'block';
+      resultEl.style.display = 'none';
+      setStatus('没有找到结果');
+      showError(msg || '查询失败，请换个词试试');
+    };
+
+    if (isChinese(q)) {
+      // 中→英：先拿英文翻译
+      youdaoSuggest(q).then(function (entries) {
+        var en = null;
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i].explain;
+          if (typeof e === 'string' && /^[a-zA-Z][a-zA-Z\s'-]*$/.test(e.trim())) {
+            en = e.trim().split(/\s+/)[0].toLowerCase();
+            break;
+          }
         }
-      })
-      .catch(function () {
-        setStatus('查询失败');
-        showError('网络异常，请检查网络后重试');
-      });
+        if (!en) { fail('没有找到该词对应的英文'); return; }
+        // 再用英文拿中文释义
+        youdaoSuggest(en).then(function (enEntries) {
+          var meaning = '';
+          if (enEntries && enEntries.length) meaning = enEntries[0].explain || '';
+          finish({ query: q, lang: 'zh', word: en, phonetic: '', meaning: meaning, spelling: en.split('') });
+        }).catch(function () {
+          finish({ query: q, lang: 'zh', word: en, phonetic: '', meaning: '', spelling: en.split('') });
+        });
+      }).catch(function () { fail('网络异常，请检查网络后重试'); });
+    } else {
+      // 英→中
+      youdaoSuggest(q).then(function (entries) {
+        if (!entries || !entries.length) { fail('没有找到该单词'); return; }
+        var en = entries[0].entry;
+        var meaning = entries[0].explain || '';
+        finish({ query: q, lang: 'en', word: en, phonetic: '', meaning: meaning, spelling: en.split('') });
+      }).catch(function () { fail('网络异常，请检查网络后重试'); });
+    }
   }
 
   // ---------- 语音识别（按住说话） ----------
@@ -334,7 +364,6 @@
       if (interim) {
         lastInterim = interim;
         setStatus('正在听：' + interim);
-        // 智能切换：interim 是英文而当前是中文识别器 → 切换英文重试
         if (recogLang === 'zh-CN' && !/[\u4e00-\u9fa5]/.test(interim) && /[a-zA-Z]/.test(interim)) {
           switchTo('en-US');
         } else if (recogLang === 'en-US' && /[\u4e00-\u9fa5]/.test(interim)) {
