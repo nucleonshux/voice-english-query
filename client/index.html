@@ -9,7 +9,7 @@
   html, body { height: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    background: linear-gradient(160deg, #7cc6fe 0%, #a8e6ff 35%, #fff3b0 100%);
+    background: #f4f7fb;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -25,107 +25,116 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 32px 20px 28px;
+    padding: 30px 20px 24px;
     position: relative;
   }
+
   /* 顶部标题 */
-  .header { text-align: center; margin-bottom: 18px; }
+  .header { text-align: center; margin-bottom: 16px; }
   .header h1 {
-    font-size: 30px; font-weight: 800; color: #1a4d8f;
-    letter-spacing: 2px;
+    font-size: 28px; font-weight: 800; color: #1e3a5f;
+    letter-spacing: 1px;
   }
-  .header p { font-size: 15px; color: #3c6fb0; margin-top: 6px; }
+  .header p { font-size: 14px; color: #7a8fa6; margin-top: 6px; }
+
+  /* 语言切换 */
+  .lang-switch {
+    display: flex; gap: 8px; margin-bottom: 18px;
+    background: #e6ebf2; border-radius: 22px; padding: 4px;
+  }
+  .lang-switch button {
+    border: none; background: transparent; color: #5b6b7d;
+    font-size: 14px; font-weight: 600; padding: 7px 16px;
+    border-radius: 18px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .lang-switch button.active { background: #ffffff; color: #2563eb; box-shadow: 0 1px 4px rgba(30,60,120,.14); }
 
   /* 结果区 */
   .result-area {
     width: 100%;
-    min-height: 180px;
-    background: rgba(255,255,255,0.86);
-    border-radius: 28px;
-    box-shadow: 0 10px 30px rgba(31,98,168,0.18);
+    min-height: 200px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 26px 22px;
-    margin-bottom: 26px;
-    backdrop-filter: blur(6px);
+    padding: 24px 18px;
+    margin-bottom: 20px;
   }
-  .placeholder { color: #8fb4d8; font-size: 17px; text-align: center; line-height: 1.7; }
+  .placeholder { color: #9aaabf; font-size: 16px; text-align: center; line-height: 1.7; }
   .result { width: 100%; text-align: center; display: none; }
   .result .word {
-    font-size: 68px; font-weight: 900; color: #0d3f74;
-    letter-spacing: 2px; cursor: pointer; line-height: 1.15;
+    font-size: 58px; font-weight: 800; color: #1e3a5f;
+    letter-spacing: 1px; cursor: pointer; line-height: 1.2;
     word-break: break-all;
-    text-decoration: underline; text-decoration-color: rgba(13,63,116,0.25);
-    text-underline-offset: 8px;
   }
-  .result .hint-tap { font-size: 13px; color: #6a95c0; margin-top: 4px; }
-  .result .phonetic { font-size: 22px; color: #4d7cb2; margin-top: 10px; }
+  .result .hint-tap { font-size: 13px; color: #9aaabf; margin-top: 6px; }
   .result .meaning {
-    font-size: 17px; color: #33577e; margin-top: 14px; line-height: 1.6;
-    max-height: 72px; overflow-y: auto;
+    font-size: 16px; color: #5b6b7d; margin-top: 12px; line-height: 1.6;
+    max-height: 76px; overflow-y: auto;
   }
   .result .spell-row { margin-top: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
   .result .spell-row .letter {
-    width: 42px; height: 42px; line-height: 42px; text-align: center;
-    background: #ffe9a3; color: #a05a00; border-radius: 12px;
-    font-size: 22px; font-weight: 800;
+    width: 44px; height: 44px; line-height: 44px; text-align: center;
+    background: #eef4ff; color: #2563eb; border-radius: 10px;
+    font-size: 22px; font-weight: 700; transition: background .15s, color .15s, transform .15s;
   }
-  .result .spell-row .letter.active { background: #ffb74d; color: #fff; transform: scale(1.15); }
+  .result .spell-row .letter.active { background: #2563eb; color: #fff; transform: scale(1.12); }
 
-  /* 圆形按钮 */
-  .btn-wrap { position: relative; display: flex; justify-content: center; margin-bottom: 22px; }
+  /* 圆形按钮（扁平） */
+  .btn-wrap { position: relative; display: flex; justify-content: center; margin-bottom: 18px; }
   .pulse-ring {
     position: absolute; top: 50%; left: 50%;
-    width: 190px; height: 190px; border-radius: 50%;
-    border: 4px solid rgba(255,255,255,0.7);
+    width: 160px; height: 160px; border-radius: 50%;
+    border: 3px solid #93b9f6;
     transform: translate(-50%,-50%);
     opacity: 0; pointer-events: none;
   }
   .pulse-ring.anim { animation: pulse 1.2s ease-out infinite; }
   @keyframes pulse {
-    0% { transform: translate(-50%,-50%) scale(0.9); opacity: 0.9; }
-    100% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+    0% { transform: translate(-50%,-50%) scale(0.92); opacity: .8; }
+    100% { transform: translate(-50%,-50%) scale(1.5); opacity: 0; }
   }
   .mic-btn {
-    width: 190px; height: 190px; border-radius: 50%;
-    background: radial-gradient(circle at 30% 28%, #6fb7ff 0%, #3d8bfd 55%, #2260d8 100%);
-    box-shadow: 0 14px 34px rgba(29,96,210,0.42), inset 0 -6px 12px rgba(0,30,90,0.28);
+    width: 160px; height: 160px; border-radius: 50%;
+    background: #2563eb;
     border: none; cursor: pointer; outline: none;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: #fff; transition: transform 0.12s;
+    color: #fff; transition: background .15s, transform .12s;
   }
-  .mic-btn:active, .mic-btn.recording { transform: scale(0.94); }
-  .mic-btn .mic-icon { font-size: 54px; line-height: 1; }
-  .mic-btn .mic-text { font-size: 17px; font-weight: 700; margin-top: 10px; letter-spacing: 2px; }
-  .mic-btn.recording { background: radial-gradient(circle at 30% 28%, #ff9d6f 0%, #ff6b3d 55%, #e0441f 100%); box-shadow: 0 14px 34px rgba(230,80,40,0.45); }
+  .mic-btn:active { transform: scale(.96); }
+  .mic-btn .mic-icon { font-size: 44px; line-height: 1; }
+  .mic-btn .mic-text { font-size: 15px; font-weight: 700; margin-top: 8px; letter-spacing: 2px; }
+  .mic-btn.recording { background: #ef4444; }
 
-  /* 听写提示 */
-  .status { min-height: 26px; font-size: 17px; color: #1a4d8f; font-weight: 600; margin-bottom: 12px; text-align: center; }
+  /* 状态提示 */
+  .status { min-height: 24px; font-size: 15px; color: #4b5c6f; font-weight: 600; margin-bottom: 10px; text-align: center; }
 
   /* 键盘输入（降级模式） */
-  .input-mode { width: 100%; display: none; margin-bottom: 20px; }
+  .input-mode { width: 100%; display: none; margin-bottom: 16px; }
   .input-mode.show { display: block; }
-  .input-row { display: flex; gap: 10px; }
+  .input-row { display: flex; gap: 8px; }
   .input-row input {
-    flex: 1; height: 52px; border-radius: 16px; border: 2px solid #3d8bfd;
-    background: #fff; padding: 0 16px; font-size: 18px; color: #123;
+    flex: 1; height: 48px; border-radius: 12px; border: 1.5px solid #d3dce8;
+    background: #fff; padding: 0 14px; font-size: 16px; color: #1e293b;
     outline: none;
   }
+  .input-row input:focus { border-color: #2563eb; }
   .input-row button {
-    height: 52px; padding: 0 22px; border-radius: 16px; border: none;
-    background: #3d8bfd; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer;
+    height: 48px; padding: 0 20px; border-radius: 12px; border: none;
+    background: #2563eb; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
   }
-  .mode-switch { font-size: 14px; color: #2a63a8; text-decoration: underline; cursor: pointer; margin-bottom: 18px; }
+  .mode-switch { font-size: 13px; color: #5b8dd9; text-decoration: underline; cursor: pointer; margin-bottom: 16px; }
 
   /* 底部说明 */
-  .footer { margin-top: auto; font-size: 13px; color: rgba(26,77,143,0.6); text-align: center; line-height: 1.6; }
+  .footer { margin-top: auto; font-size: 12px; color: #a5b4c6; text-align: center; line-height: 1.7; }
 
   /* 错误提示 */
   .error-box {
-    background: #ffe1d8; color: #c0392b; border-radius: 14px; padding: 12px 16px;
-    font-size: 15px; margin-bottom: 14px; display: none; width: 100%;
+    background: #fdeceb; color: #c0392b; border-radius: 12px; padding: 10px 14px;
+    font-size: 14px; margin-bottom: 12px; display: none; width: 100%;
   }
 </style>
 </head>
@@ -136,6 +145,12 @@
     <p>点一下开始听，再说中文或英文</p>
   </div>
 
+  <div class="lang-switch" id="langSwitch">
+    <button data-lang="auto" class="active">自动</button>
+    <button data-lang="zh">中文</button>
+    <button data-lang="en">English</button>
+  </div>
+
   <div class="error-box" id="errorBox"></div>
 
   <div class="result-area" id="resultArea">
@@ -143,7 +158,6 @@
     <div class="result" id="result">
       <div class="word" id="word"></div>
       <div class="hint-tap">👆 点击单词 重复读拼写</div>
-      <div class="phonetic" id="phonetic"></div>
       <div class="meaning" id="meaning"></div>
       <div class="spell-row" id="spellRow"></div>
     </div>
@@ -177,20 +191,22 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var placeholder = $('placeholder'), resultEl = $('result');
-  var wordEl = $('word'), phoneticEl = $('phonetic'), meaningEl = $('meaning'), spellRow = $('spellRow');
+  var wordEl = $('word'), meaningEl = $('meaning'), spellRow = $('spellRow');
   var micBtn = $('micBtn'), micIcon = $('micIcon'), micText = $('micText');
   var statusEl = $('status'), pulseRing = $('pulseRing'), errorBox = $('errorBox');
   var modeSwitch = $('modeSwitch'), inputMode = $('inputMode'), textInput = $('textInput'), textBtn = $('textBtn');
 
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   var useVoice = !!SpeechRecognition;
-  var currentResult = null;   // { word, phonetic, meaning, spelling, query, lang }
+  var currentResult = null;
   var recognizing = false;
   var recog = null;
   var recogLang = 'zh-CN';
-  var lastInterim = '';
+  var langMode = 'auto';   // auto | zh | en
   var speechSupported = 'speechSynthesis' in window;
   var jsonpSeq = 0;
+  var spellTimers = [];
+  var spellSpeaking = false;
 
   // ---------- 界面状态 ----------
   function showError(msg) {
@@ -200,17 +216,12 @@
   }
   function setStatus(t) { statusEl.textContent = t; }
 
-  // ---------- 有道 suggest JSONP 查询（纯静态，无跨域问题） ----------
-  // 返回 Promise<entries[]>：中→英 时 entries[i].explain 为英文翻译；
-  // 英→中 时 entries[i].entry 为英文单词、explain 为中文释义。
+  // ---------- 有道 suggest JSONP 查询 ----------
   function youdaoSuggest(q) {
     return new Promise(function (resolve, reject) {
       var cb = 'ydcb_' + (++jsonpSeq);
       var script = document.createElement('script');
-      var timer = setTimeout(function () {
-        cleanup();
-        reject(new Error('timeout'));
-      }, 12000);
+      var timer = setTimeout(function () { cleanup(); reject(new Error('timeout')); }, 12000);
       function cleanup() {
         clearTimeout(timer);
         try { delete window[cb]; } catch (e) { window[cb] = undefined; }
@@ -223,10 +234,7 @@
       };
       script.src = 'https://dict.youdao.com/suggest?num=5&doctype=json&q=' +
         encodeURIComponent(q) + '&callback=' + cb;
-      script.onerror = function () {
-        cleanup();
-        reject(new Error('network'));
-      };
+      script.onerror = function () { cleanup(); reject(new Error('network')); };
       document.body.appendChild(script);
     });
   }
@@ -238,7 +246,7 @@
     a.play().catch(function () { /* 自动播放被拦时静默 */ });
   }
 
-  // ---------- 语音合成（拼读） ----------
+  // ---------- 语音合成 ----------
   function pickVoice(langPrefix) {
     if (!speechSupported) return null;
     var voices = window.speechSynthesis.getVoices();
@@ -248,32 +256,56 @@
     return null;
   }
 
-  // 逐个字母高亮 + 朗读拼写
+  // 逐字母拼读：单个 utterance 一次读完整拼写（"A P P L E"），
+  // 避免连续 speak 被浏览器互相覆盖导致无声；高亮动画独立并行。
   function animateSpelling(word) {
     var letters = spellRow.children;
     var total = word.length;
+    clearSpell();
+    spellSpeaking = true;
     if (speechSupported) window.speechSynthesis.cancel();
-    var speakLetter = function (ch, i) {
-      setTimeout(function () {
-        for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
-        if (letters[i]) letters[i].classList.add('active');
-        if (speechSupported) {
-          var u = new SpeechSynthesisUtterance(ch);
-          u.lang = 'en-US';
-          u.rate = 0.85;
-          u.pitch = 1.15;
-          var v = pickVoice('en');
-          if (v) u.voice = v;
-          window.speechSynthesis.speak(u);
-        }
-        if (i === total - 1) {
-          setTimeout(function () {
-            for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
-          }, 500);
-        }
-      }, i * 750);
-    };
-    for (var i = 0; i < total; i++) speakLetter(word[i], i);
+
+    // 高亮动画（不依赖语音回调，保证一定有动画）
+    var i = 0;
+    function hl() {
+      if (!spellSpeaking) return;
+      for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
+      if (letters[i]) letters[i].classList.add('active');
+      i++;
+      if (i < total) {
+        spellTimers.push(setTimeout(hl, 680));
+      } else {
+        spellTimers.push(setTimeout(function () {
+          for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
+          spellSpeaking = false;
+        }, 600));
+      }
+    }
+    spellTimers.push(setTimeout(hl, 350));
+
+    // 语音：单个 utterance 读字母串（空格分隔），优先英文语音，降级任意语音
+    if (speechSupported) {
+      var u = new SpeechSynthesisUtterance(word.split('').join(' '));
+      u.lang = 'en-US';
+      u.rate = 0.72;
+      u.pitch = 1.1;
+      var enVoice = pickVoice('en');
+      if (enVoice) {
+        u.voice = enVoice;
+      } else {
+        // 无英文语音时用任意可用语音兜底，保证有声音
+        var voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length) u.voice = voices[0];
+      }
+      try { window.speechSynthesis.speak(u); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function clearSpell() {
+    spellSpeaking = false;
+    for (var k = 0; k < spellTimers.length; k++) clearTimeout(spellTimers[k]);
+    spellTimers = [];
+    if (speechSupported) window.speechSynthesis.cancel();
   }
 
   // ---------- 渲染结果 ----------
@@ -281,8 +313,10 @@
     currentResult = data;
     placeholder.style.display = 'none';
     resultEl.style.display = 'block';
+    // 单词太长自动缩小字号，避免换行
+    var len = data.word.length;
+    wordEl.style.fontSize = (len > 10 ? 40 : len > 7 ? 48 : 58) + 'px';
     wordEl.textContent = data.word;
-    phoneticEl.textContent = data.phonetic || '';
     meaningEl.textContent = data.meaning || '';
     spellRow.innerHTML = '';
     data.spelling.forEach(function (ch) {
@@ -293,7 +327,6 @@
     });
     showError('');
     setStatus('已找到：' + data.word + '，正在朗读…');
-    // 完整播报：有道美音读单词 → 拼读
     playYoudaoVoice(data.word);
     setTimeout(function () { animateSpelling(data.word); }, data.word.length > 6 ? 1800 : 1400);
   }
@@ -316,7 +349,6 @@
     };
 
     if (isChinese(q)) {
-      // 中→英：先拿英文翻译
       youdaoSuggest(q).then(function (entries) {
         var en = null;
         for (var i = 0; i < entries.length; i++) {
@@ -327,27 +359,31 @@
           }
         }
         if (!en) { fail('没有找到该词对应的英文'); return; }
-        // 再用英文拿中文释义
         youdaoSuggest(en).then(function (enEntries) {
           var meaning = '';
           if (enEntries && enEntries.length) meaning = enEntries[0].explain || '';
-          finish({ query: q, lang: 'zh', word: en, phonetic: '', meaning: meaning, spelling: en.split('') });
+          finish({ query: q, lang: 'zh', word: en, meaning: meaning, spelling: en.split('') });
         }).catch(function () {
-          finish({ query: q, lang: 'zh', word: en, phonetic: '', meaning: '', spelling: en.split('') });
+          finish({ query: q, lang: 'zh', word: en, meaning: '', spelling: en.split('') });
         });
       }).catch(function () { fail('网络异常，请检查网络后重试'); });
     } else {
-      // 英→中
       youdaoSuggest(q).then(function (entries) {
         if (!entries || !entries.length) { fail('没有找到该单词'); return; }
         var en = entries[0].entry;
         var meaning = entries[0].explain || '';
-        finish({ query: q, lang: 'en', word: en, phonetic: '', meaning: meaning, spelling: en.split('') });
+        finish({ query: q, lang: 'en', word: en, meaning: meaning, spelling: en.split('') });
       }).catch(function () { fail('网络异常，请检查网络后重试'); });
     }
   }
 
   // ---------- 语音识别（点击开始/停止） ----------
+  function currentLang() {
+    if (langMode === 'zh') return 'zh-CN';
+    if (langMode === 'en') return 'en-US';
+    return 'zh-CN'; // auto 默认先中文
+  }
+
   function createRecog(lang) {
     var r = new SpeechRecognition();
     r.lang = lang;
@@ -362,12 +398,14 @@
         else interim += tr;
       }
       if (interim) {
-        lastInterim = interim;
         setStatus('正在听：' + interim);
-        if (recogLang === 'zh-CN' && !/[\u4e00-\u9fa5]/.test(interim) && /[a-zA-Z]/.test(interim)) {
-          switchTo('en-US');
-        } else if (recogLang === 'en-US' && /[\u4e00-\u9fa5]/.test(interim)) {
-          switchTo('zh-CN');
+        // 自动模式下根据 interim 智能切换语言
+        if (langMode === 'auto') {
+          if (recogLang === 'zh-CN' && !/[\u4e00-\u9fa5]/.test(interim) && /[a-zA-Z]/.test(interim)) {
+            switchTo('en-US');
+          } else if (recogLang === 'en-US' && /[\u4e00-\u9fa5]/.test(interim)) {
+            switchTo('zh-CN');
+          }
         }
       }
       if (final) {
@@ -407,20 +445,18 @@
     if (!useVoice) return;
     if (recognizing) return;
     recognizing = true;
-    recogLang = 'zh-CN';
-    recog = createRecog('zh-CN');
-    lastInterim = '';
+    recogLang = currentLang();
+    recog = createRecog(recogLang);
     micBtn.classList.add('recording');
     micIcon.textContent = '🎙️';
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
-    setStatus('正在听，请说出中文或英文…');
+    setStatus('正在听，请说出' + (recogLang === 'zh-CN' ? '中文或英文' : '英文单词') + '…');
     try { recog.start(); } catch (e) { recognizing = false; }
   }
 
   function stopRecog() {
     if (!useVoice || !recognizing) return;
-    // 再次点击：停止识别并立即触发查询
     try { recog.stop(); } catch (e) { /* ignore */ }
   }
 
@@ -430,7 +466,7 @@
     try { recog.stop(); } catch (e) { /* ignore */ }
     recognizing = false;
     setTimeout(function () {
-      if (!recognizing) {
+      if (!recognizing && langMode === 'auto') {
         recognizing = true;
         recog = createRecog(lang);
         try { recog.start(); } catch (e) { recognizing = false; }
@@ -444,6 +480,19 @@
     else startRecog();
   }
   micBtn.addEventListener('click', toggleRecog);
+
+  // 语言切换
+  var langBtns = document.querySelectorAll('#langSwitch button');
+  langBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      langMode = btn.getAttribute('data-lang');
+      langBtns.forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      if (langMode === 'en') setStatus('English 模式：点一下开始听，再说英文');
+      else if (langMode === 'zh') setStatus('中文模式：点一下开始听，再说中文');
+      else setStatus('自动模式：点一下开始听，中文英文都能识别');
+    });
+  });
 
   // 点击单词 → 重复读拼写
   wordEl.addEventListener('click', function () {
