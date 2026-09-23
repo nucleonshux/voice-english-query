@@ -444,9 +444,31 @@
     }
   }
 
-  // ---------- 语音识别（点击开始/停止） ----------
+  // ---------- 语音识别（单例 + 监听循环模式） ----------
+  // iOS Safari 的 SpeechRecognition 极不稳定：每次 new 新实例、手动反复 start/stop，
+  // 都会导致“识别一次后再也启动不了”。稳定做法（社区已验证）：
+  //  1) 页面加载时只创建一次实例（单例），绝不每次点击 new；
+  //  2) 识别结束(onend)后若仍处于“监听”状态，自动重启识别器（形成循环），无需用户再次点击；
+  //  3) 首次手势预热麦克风；no-speech 不视为致命错误，自动续听。
+  var listening = false;      // 应用是否处于“监听中”状态
+  var ignoreOnend = false;    // 用户主动停止时忽略 onend 自动重启
+  var noSpeechCount = 0;      // 连续无语音次数
+  var restartTimer = null;    // 自动重启定时器
+  var micWarmed = false;      // 麦克风是否已预热
+
   function currentLang() {
     return langMode === 'en' ? 'en-US' : 'zh-CN';
+  }
+
+  // 首次用户手势时预热麦克风，降低首次识别失败率
+  function warmupMic() {
+    if (micWarmed || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    micWarmed = true;
+    try {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+      }).catch(function () { /* 权限未授予时忽略 */ });
+    } catch (e) { /* ignore */ }
   }
 
   function resetMicUI() {
@@ -459,141 +481,163 @@
     if (!currentResult) setStatus('点一下开始听，再点一下识别');
   }
 
-  function createRecog(lang) {
-    var r = new SpeechRecognition();
-    r.lang = lang;
-    r.interimResults = true;
-    r.continuous = false;
-    r.maxAlternatives = 3;
-    r._started = false;
-    r.onstart = function () {
-      r._started = true;
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  // 单例识别器：只在页面加载时创建一次，事件处理器全程绑定在同一实例上
+  function initRecog() {
+    if (!useVoice || recog) return;
+    recog = new SpeechRecognition();
+    recog.lang = currentLang();
+    recog.interimResults = true;
+    recog.continuous = false;   // iOS 上 continuous=false 更稳定
+    recog.maxAlternatives = 3;
+    recog._started = false;
+
+    recog.onstart = function () {
+      recog._started = true;
+      noSpeechCount = 0;
     };
-    r.onresult = function (ev) {
+
+    recog.onresult = function (ev) {
       var interim = '', final = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
         var tr = ev.results[i][0].transcript;
         if (ev.results[i].isFinal) final += tr;
         else interim += tr;
       }
-      if (interim) {
-        setStatus('正在听：' + interim);
-      }
+      if (interim) setStatus('正在听：' + interim);
       if (final) {
         setStatus('识别到：' + final);
         doQuery(final);
+        // 识别到结果：自动结束本次监听，展示结果；用户再点一下即可识别下一个词
+        listening = false;
+        ignoreOnend = true;
+        try { recog.stop(); } catch (e) { /* ignore */ }
+        resetMicUI();
       }
     };
-    r.onerror = function (ev) {
+
+    recog.onerror = function (ev) {
       if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        listening = false;
+        ignoreOnend = true;
         resetMicUI();
         setStatus('麦克风不可用');
         showError('无法使用麦克风（可能被浏览器禁止），已切换到键盘输入模式');
         inputMode.classList.add('show');
         modeSwitch.style.display = 'none';
       } else if (ev.error === 'no-speech') {
-        resetMicUI();
-        setStatus('没有听到声音，请点一下再试');
-      } else if (ev.error === 'aborted') {
-        resetMicUI();
-      } else {
-        // 非权限类错误：自动重试一次（如网络/音频通道冲突导致的偶发失败）
-        if (!r._retried) {
-          r._retried = true;
+        // 无语音不是致命错误：记录次数，靠 onend 自动续听
+        noSpeechCount++;
+        if (noSpeechCount >= 3) {
+          listening = false;
+          ignoreOnend = true;
           resetMicUI();
-          setStatus('识别未响应，正在重试…');
-          setTimeout(function () { startRecog(); }, 700);
+          setStatus('没有听到声音，已停止，请再点一下');
         } else {
+          setStatus('没听到，继续听…');
+        }
+      } else if (ev.error === 'aborted') {
+        // 忽略
+      } else {
+        // 其他错误：保持监听，靠 onend 自动重启兜底；连续多次仍失败则停止
+        noSpeechCount++;
+        if (noSpeechCount >= 3) {
+          listening = false;
+          ignoreOnend = true;
           resetMicUI();
-          setStatus('识别出错：' + ev.error + '，请再点一次');
+          setStatus('识别异常，已停止，请再点一下');
+        } else {
+          setStatus('识别异常（' + ev.error + '），正在继续听…');
         }
       }
     };
-    r.onend = function () {
-      resetMicUI();
+
+    recog.onend = function () {
+      // 用户主动停止（或识别到结果）时：不再自动重启
+      if (ignoreOnend) {
+        ignoreOnend = false;
+        resetMicUI();
+        return;
+      }
+      // 监听模式中：短暂等待后自动重启识别器（关键：避免用户手动二次启动的 iOS 限制）
+      if (listening) {
+        if (restartTimer) clearTimeout(restartTimer);
+        restartTimer = setTimeout(function () {
+          if (listening) startRecogInternal();
+        }, 1200);
+      } else {
+        resetMicUI();
+      }
     };
-    return r;
   }
 
-  function startRecog() {
-    if (!useVoice) return;
-    if (recognizing) return;
-    // 关键：iOS 要求语音识别必须在用户点击手势内同步启动，
-    // 任何 setTimeout 延迟都会让 start() 脱离手势上下文而被系统拒绝（表现为“点了没反应/说了话也说没识别到”）。
-    // 因此这里全部同步执行：先停音频（同步）、abort 旧会话（同步）、立即 start()。
+  function startRecogInternal() {
+    if (!useVoice || !listening) return;
     clearSpell();
     stopAllAudio();
-    unlockAutoplay();
-    // 终止可能残留的旧识别会话
-    if (recog) {
-      try { recog.abort(); } catch (e) { /* ignore */ }
-      recog = null;
-    }
-    recognizing = true;
-    recogLang = currentLang();
-    recog = createRecog(recogLang);
     micBtn.classList.add('recording');
     micIcon.textContent = '🎙️';
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
     setStatus('正在听，请说出' + (recogLang === 'en' ? '英文单词' : '中文或英文') + '…');
-    // 启动确认：2.5 秒后若识别器未真正启动（无 onstart 也无错误），复位提示
-    recog._bootTimer = setTimeout(function () {
-      if (recognizing && recog && !recog._started && !recog._retried) {
-        recog._retried = true;
-        try { recog.abort(); } catch (e) { /* ignore */ }
-        resetMicUI();
-        setStatus('识别没有响应，请再点一次');
-      }
-    }, 2500);
-    // 超时自检：8 秒没有任何识别事件则自动停止，避免识别器卡死
-    var idleTimer = setTimeout(function () {
-      if (recognizing) {
-        try { recog.stop(); } catch (e) { /* ignore */ }
-        setStatus('没有识别到声音，已停止，请再点一次');
-        resetMicUI();
-      }
-    }, 8000);
-    recog._idleTimer = idleTimer;
     try {
       recog.start();
     } catch (e) {
-      clearTimeout(recog._bootTimer);
-      clearTimeout(recog._idleTimer);
       resetMicUI();
       setStatus('识别启动失败，请再点一次');
     }
   }
 
-  function stopRecog() {
-    if (!useVoice || !recognizing) return;
-    // 再次点击：手势内解锁自动播放，立即复位界面，并停止识别触发结果
+  // 用户点击：开始监听 / 停止监听
+  function startRecog() {
+    if (!useVoice || listening) return;
+    listening = true;
+    noSpeechCount = 0;
+    ignoreOnend = false;
+    recogLang = currentLang();
+    if (recog) { try { recog.lang = recogLang; } catch (e) { /* ignore */ } }
     unlockAutoplay();
-    if (recog && recog._idleTimer) clearTimeout(recog._idleTimer);
-    if (recog && recog._bootTimer) clearTimeout(recog._bootTimer);
+    warmupMic();
+    startRecogInternal();
+  }
+
+  function stopRecog() {
+    if (!useVoice || !listening) return;
+    listening = false;
+    ignoreOnend = true;
+    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+    unlockAutoplay();
     resetMicUI();
-    try { recog.stop(); } catch (e) { /* ignore */ }
+    // iOS 兼容 workaround：stop() 不生效时，先 start() 一次再 stop()，确保会话能结束
+    try {
+      if (isIOS) {
+        try { recog.start(); } catch (e) { /* 已在运行则直接停 */ }
+        setTimeout(function () { try { recog.stop(); } catch (e) { /* ignore */ } }, 50);
+      } else {
+        recog.stop();
+      }
+    } catch (e) { /* ignore */ }
   }
 
   function switchTo(lang) {
     if (recogLang === lang) return;
     recogLang = lang;
-    try { recog.stop(); } catch (e) { /* ignore */ }
-    recognizing = false;
-    setTimeout(function () {
-      if (!recognizing) {
-        recognizing = true;
-        recog = createRecog(lang);
-        try { recog.start(); } catch (e) { recognizing = false; }
-      }
-    }, 150);
+    // 单例：直接改 lang，不重建实例
+    if (recog) { try { recog.lang = lang; } catch (e) { /* ignore */ } }
+    // 监听中切换语言：重启当前会话
+    if (listening) {
+      stopRecog();
+      setTimeout(function () { if (!listening) startRecog(); }, 300);
+    }
   }
 
-  // ---------- 按钮事件：点一下开始听，再点一下开始识别 ----------
+  // ---------- 按钮事件：点一下开始听，再点一下识别 ----------
   function toggleRecog() {
-    if (recognizing) stopRecog();
+    if (listening) stopRecog();
     else startRecog();
   }
+  initRecog();
   micBtn.addEventListener('click', toggleRecog);
 
   // 语言切换
