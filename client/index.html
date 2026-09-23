@@ -133,13 +133,13 @@
 <div class="container">
   <div class="header">
     <h1>🔊 语音英语查询</h1>
-    <p>按住按钮，说中文或英文</p>
+    <p>点一下开始听，再说中文或英文</p>
   </div>
 
   <div class="error-box" id="errorBox"></div>
 
   <div class="result-area" id="resultArea">
-    <div class="placeholder" id="placeholder">👇 按住下面的按钮<br>说出你想查的词语</div>
+    <div class="placeholder" id="placeholder">👇 点一下按钮开始听<br>说完再点一下开始识别</div>
     <div class="result" id="result">
       <div class="word" id="word"></div>
       <div class="hint-tap">👆 点击单词 重复读拼写</div>
@@ -149,7 +149,7 @@
     </div>
   </div>
 
-  <div class="status" id="status">按住说话，松手查询</div>
+  <div class="status" id="status">点一下开始听，再点一下识别</div>
 
   <div class="mode-switch" id="modeSwitch">麦克风不可用？点这里用键盘输入</div>
 
@@ -164,7 +164,7 @@
     <div class="pulse-ring" id="pulseRing"></div>
     <button class="mic-btn" id="micBtn">
       <span class="mic-icon" id="micIcon">🎤</span>
-      <span class="mic-text" id="micText">按住说话</span>
+      <span class="mic-text" id="micText">开始听</span>
     </button>
   </div>
 
@@ -347,7 +347,7 @@
     }
   }
 
-  // ---------- 语音识别（按住说话） ----------
+  // ---------- 语音识别（点击开始/停止） ----------
   function createRecog(lang) {
     var r = new SpeechRecognition();
     r.lang = lang;
@@ -385,9 +385,9 @@
         inputMode.classList.add('show');
         modeSwitch.style.display = 'none';
       } else if (ev.error === 'no-speech') {
-        setStatus('没有听到声音，请按住再说一次');
+        setStatus('没有听到声音，请点一下再试');
       } else if (ev.error === 'aborted') {
-        // 正常松手取消
+        // 用户再次点击停止
       } else {
         setStatus('识别出错：' + ev.error);
       }
@@ -395,10 +395,10 @@
     r.onend = function () {
       recognizing = false;
       micBtn.classList.remove('recording');
-      micText.textContent = '按住说话';
+      micText.textContent = '开始听';
       micIcon.textContent = '🎤';
       pulseRing.classList.remove('anim');
-      if (!currentResult) setStatus('按住说话，松手查询');
+      if (!currentResult) setStatus('点一下开始听，再点一下识别');
     };
     return r;
   }
@@ -414,12 +414,13 @@
     micIcon.textContent = '🎙️';
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
-    setStatus('请说出中文或英文词语…');
+    setStatus('正在听，请说出中文或英文…');
     try { recog.start(); } catch (e) { recognizing = false; }
   }
 
   function stopRecog() {
     if (!useVoice || !recognizing) return;
+    // 再次点击：停止识别并立即触发查询
     try { recog.stop(); } catch (e) { /* ignore */ }
   }
 
@@ -437,24 +438,12 @@
     }, 150);
   }
 
-  // ---------- 按钮事件：按下开始，松手结束 ----------
-  function bindPress(el) {
-    var press = false;
-    el.addEventListener('touchstart', function (e) {
-      e.preventDefault();
-      press = true;
-      startRecog();
-    }, { passive: false });
-    el.addEventListener('touchend', function (e) {
-      e.preventDefault();
-      if (press) { press = false; stopRecog(); }
-    }, { passive: false });
-    el.addEventListener('touchcancel', function () { if (press) { press = false; stopRecog(); } });
-    el.addEventListener('mousedown', function (e) { e.preventDefault(); press = true; startRecog(); });
-    el.addEventListener('mouseup', function () { if (press) { press = false; stopRecog(); } });
-    el.addEventListener('mouseleave', function () { if (press) { press = false; stopRecog(); } });
+  // ---------- 按钮事件：点一下开始听，再点一下开始识别 ----------
+  function toggleRecog() {
+    if (recognizing) stopRecog();
+    else startRecog();
   }
-  bindPress(micBtn);
+  micBtn.addEventListener('click', toggleRecog);
 
   // 点击单词 → 重复读拼写
   wordEl.addEventListener('click', function () {
@@ -469,7 +458,7 @@
   modeSwitch.addEventListener('click', function () {
     inputModeOn = !inputModeOn;
     inputMode.classList.toggle('show', inputModeOn);
-    modeSwitch.textContent = inputModeOn ? '← 返回按住说话' : '麦克风不可用？点这里用键盘输入';
+    modeSwitch.textContent = inputModeOn ? '← 返回点击说话' : '麦克风不可用？点这里用键盘输入';
   });
   textBtn.addEventListener('click', function () { doQuery(textInput.value); });
   textInput.addEventListener('keydown', function (e) {
