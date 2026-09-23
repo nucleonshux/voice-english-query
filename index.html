@@ -203,10 +203,9 @@
   var recog = null;
   var recogLang = 'zh-CN';
   var langMode = 'auto';   // auto | zh | en
-  var speechSupported = 'speechSynthesis' in window;
   var jsonpSeq = 0;
-
   var spellSpeaking = false;
+  var spellAudios = [];    // 当前拼读用到的 audio 元素
 
   // ---------- 界面状态 ----------
   function showError(msg) {
@@ -246,117 +245,60 @@
     a.play().catch(function () { /* 自动播放被拦时静默 */ });
   }
 
-  // ---------- 语音合成 ----------
-  function pickVoice(langPrefix) {
-    if (!speechSupported) return null;
-    var voices = window.speechSynthesis.getVoices();
-    for (var i = 0; i < voices.length; i++) {
-      if (voices[i].lang && voices[i].lang.toLowerCase().indexOf(langPrefix) === 0) return voices[i];
-    }
-    return null;
-  }
-
-  // 逐字母拼读：每个字母单独一个 utterance，读完一个再读下一个（onend 驱动），
-  // 逐字母拼读：单个 utterance 读 "A. P. P. L. E."（字母用句点分隔），
-
-  // TTS 会逐个字母朗读、不连读；单 utterance 不受连续 speak 被覆盖的影响，保证有声音。
-
-  // 高亮动画用独立定时器并行，与语音同步推进。
-
+  // ---------- 逐字母真人拼读 ----------
+  // 像真人拼读一样：a---p---p---l---e，一个字母一个字母读、字母之间自然停顿。
+  // 使用有道真人发音音频（支持单字母发音），完全绕开浏览器自带语音合成，
+  // 避免 iOS 手势限制、连读、乱序等问题。
   function animateSpelling(word) {
-
     var letters = spellRow.children;
-
     var total = word.length;
-
     clearSpell();
-
     spellSpeaking = true;
 
-    if (speechSupported) window.speechSynthesis.cancel();
+    // 预先创建每个字母的音频并开始加载
+    spellAudios = [];
+    for (var i = 0; i < total; i++) {
+      var a = document.createElement('audio');
+      a.preload = 'auto';
+      a.src = 'https://dict.youdao.com/dictvoice?audio=' +
+        encodeURIComponent(word[i].toLowerCase()) + '&type=2';
+      spellAudios.push(a);
+    }
 
-
-
-    // 高亮动画（独立并行，不依赖语音回调）
-
-    var i = 0;
-
-    function hl() {
-
-      if (!spellSpeaking) return;
-
+    var idx = 0;
+    var finished = false;
+    function step() {
+      if (!spellSpeaking || finished) return;
+      if (idx >= total) {
+        for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
+        spellSpeaking = false;
+        return;
+      }
+      // 高亮当前字母
       for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
+      if (letters[idx]) letters[idx].classList.add('active');
 
-      if (letters[i]) letters[i].classList.add('active');
-
-      i++;
-
-      if (i < total) {
-
-        setTimeout(hl, 620);
-
-      } else {
-
-        setTimeout(function () {
-
-          for (var k = 0; k < letters.length; k++) letters[k].classList.remove('active');
-
-          spellSpeaking = false;
-
-        }, 500);
-
+      var p = spellAudios[idx];
+      var guard = setTimeout(function () { next(); }, 2500); // 兜底：音频异常时也推进
+      function next() {
+        clearTimeout(guard);
+        idx++;
+        step();
       }
-
+      p.onended = next;
+      p.onerror = next;
+      p.play().catch(function () { next(); });
     }
-
-    setTimeout(hl, 350);
-
-
-
-    // 语音：句点分隔字母串，一次朗读
-
-    if (speechSupported) {
-
-      var spellText = word.split('').join('. ');
-
-      var u = new SpeechSynthesisUtterance(spellText);
-
-      u.lang = 'en-US';
-
-      u.rate = 0.72;
-
-      u.pitch = 1.05;
-
-      var enVoice = pickVoice('en');
-
-      if (enVoice) {
-
-        u.voice = enVoice;
-
-      } else {
-
-        // 无英文语音时用任意可用语音兜底，保证有声音
-
-        var voices = window.speechSynthesis.getVoices();
-
-        if (voices && voices.length) u.voice = voices[0];
-
-      }
-
-      try { window.speechSynthesis.speak(u); } catch (e) { /* ignore */ }
-
-    }
-
+    step();
   }
 
-
-
   function clearSpell() {
-
     spellSpeaking = false;
-
-    if (speechSupported) window.speechSynthesis.cancel();
-
+    // 停止并释放所有拼读音频
+    for (var i = 0; i < spellAudios.length; i++) {
+      try { spellAudios[i].pause(); } catch (e) { /* ignore */ }
+    }
+    spellAudios = [];
   }
 
   // ---------- 渲染结果 ----------
@@ -378,8 +320,9 @@
     });
     showError('');
     setStatus('已找到：' + data.word + '，正在朗读…');
+    // 先读单词（有道美音），稍候逐字母拼读
     playYoudaoVoice(data.word);
-    setTimeout(function () { animateSpelling(data.word); }, data.word.length > 6 ? 1800 : 1400);
+    setTimeout(function () { animateSpelling(data.word); }, data.word.length > 6 ? 1700 : 1300);
   }
 
   // ---------- 查询（中→英 / 英→中） ----------
@@ -449,7 +392,7 @@
     r.lang = lang;
     r.interimResults = true;
     r.continuous = false;
-    r.maxAlternatives = 1;
+    r.maxAlternatives = 3;
     r.onresult = function (ev) {
       var interim = '', final = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
@@ -487,7 +430,7 @@
         resetMicUI();
       } else {
         resetMicUI();
-        setStatus('识别出错：' + ev.error);
+        setStatus('识别出错：' + ev.error + '，请再点一次');
       }
     };
     r.onend = function () {
@@ -509,9 +452,19 @@
     micText.textContent = '正在听…';
     pulseRing.classList.add('anim');
     setStatus('正在听，请说出' + (recogLang === 'zh-CN' ? '中文或英文' : '英文单词') + '…');
+    // 超时自检：8 秒没有任何识别事件则自动停止，避免识别器卡死
+    var idleTimer = setTimeout(function () {
+      if (recognizing) {
+        try { recog.stop(); } catch (e) { /* ignore */ }
+        setStatus('没有识别到声音，已停止，请再点一次');
+        resetMicUI();
+      }
+    }, 8000);
+    recog._idleTimer = idleTimer;
     try {
       recog.start();
     } catch (e) {
+      clearTimeout(recog._idleTimer);
       resetMicUI();
       setStatus('识别启动失败，请再点一次');
     }
@@ -520,6 +473,7 @@
   function stopRecog() {
     if (!useVoice || !recognizing) return;
     // 再次点击：立即复位界面，并停止识别触发结果
+    if (recog && recog._idleTimer) clearTimeout(recog._idleTimer);
     resetMicUI();
     try { recog.stop(); } catch (e) { /* ignore */ }
   }
@@ -558,7 +512,7 @@
     });
   });
 
-  // 点击单词 → 重复读拼写
+  // 点击单词 → 重复读拼写（真人式逐字母停顿）
   wordEl.addEventListener('click', function () {
     if (currentResult) {
       setStatus('重复朗读拼写：' + currentResult.word);
@@ -578,13 +532,6 @@
     if (e.key === 'Enter') doQuery(textInput.value);
   });
 
-  // 预加载语音
-  if (speechSupported) {
-    window.speechSynthesis.getVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = function () { window.speechSynthesis.getVoices(); };
-    }
-  }
   if (!useVoice) {
     setStatus('当前浏览器不支持语音识别，请用键盘输入');
     inputMode.classList.add('show');
