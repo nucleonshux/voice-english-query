@@ -348,7 +348,7 @@
   }
 
   // ---------- 渲染结果 ----------
-  function renderResult(data) {
+  function renderResult(data, delayAudio) {
     currentResult = data;
     placeholder.style.display = 'none';
     resultEl.style.display = 'block';
@@ -365,9 +365,14 @@
       spellRow.appendChild(d);
     });
     showError('');
-    setStatus('已找到：' + data.word + '，正在朗读…');
+    setStatus('已找到：' + data.word + (delayAudio ? '，马上朗读…' : '，正在朗读…'));
     // 只读单词（有道美音），拼写仅展示
-    playYoudaoVoice(data.word);
+    // delayAudio=true：识别路径在会话结束后再播放，避免破坏 iOS 音频会话导致下次识别失败
+    if (delayAudio) {
+      setTimeout(function () { playYoudaoVoice(data.word); }, 800);
+    } else {
+      playYoudaoVoice(data.word);
+    }
     // 渲染候选词（识别/查询的模糊备选）
     candidatesEl.innerHTML = '';
     var cands = data.candidates || [];
@@ -391,13 +396,13 @@
   // ---------- 查询（中→英 / 英→中） ----------
   function isChinese(s) { return /[\u4e00-\u9fa5]/.test(s); }
 
-  function doQuery(q) {
+  function doQuery(q, delayAudio) {
     q = (q || '').trim();
     if (!q) { setStatus('请输入要查询的词语'); return; }
     setStatus('正在查询：' + q + ' …');
     showError('');
 
-    var finish = function (result) { renderResult(result); };
+    var finish = function (result) { renderResult(result, delayAudio); };
     var fail = function (msg) {
       placeholder.style.display = 'block';
       resultEl.style.display = 'none';
@@ -455,6 +460,8 @@
   var noSpeechCount = 0;      // 连续无语音次数
   var restartTimer = null;    // 自动重启定时器
   var micWarmed = false;      // 麦克风是否已预热
+  var pendingQuery = null;    // 识别到但尚未查询的结果（等会话自然结束后再处理）
+  var safeStopTimer = null;   // 兜底：识别结果出来后若会话长时间不结束，强制结束
 
   function currentLang() {
     return langMode === 'en' ? 'en-US' : 'zh-CN';
@@ -508,12 +515,20 @@
       if (interim) setStatus('正在听：' + interim);
       if (final) {
         setStatus('识别到：' + final);
-        doQuery(final);
-        // 识别到结果：自动结束本次监听，展示结果；用户再点一下即可识别下一个词
+        // 关键：识别到结果后【不立即 stop()、不立即查询播放】。
+        // iOS 上 stop() 有 bug、播放音频会占用音频会话，都会导致下次 start() 失败。
+        // 正确做法：记录结果，让识别会话自然结束(onend)，复位后再查询+延迟播放。
+        pendingQuery = final;
         listening = false;
-        ignoreOnend = true;
-        try { recog.stop(); } catch (e) { /* ignore */ }
-        resetMicUI();
+        if (safeStopTimer) clearTimeout(safeStopTimer);
+        safeStopTimer = setTimeout(function () {
+          safeStopTimer = null;
+          // iOS 偶发 onend 不来：兜底强制结束会话并处理结果
+          if (pendingQuery) {
+            try { recog.stop(); } catch (e) { /* ignore */ }
+            finishPendingQuery();
+          }
+        }, 2500);
       }
     };
 
@@ -554,7 +569,13 @@
     };
 
     recog.onend = function () {
-      // 用户主动停止（或识别到结果）时：不再自动重启
+      if (safeStopTimer) { clearTimeout(safeStopTimer); safeStopTimer = null; }
+      // 有识别结果待处理：会话已干净结束，现在才查询+延迟播放，最安全
+      if (pendingQuery) {
+        finishPendingQuery();
+        return;
+      }
+      // 用户主动停止时：不再自动重启
       if (ignoreOnend) {
         ignoreOnend = false;
         resetMicUI();
@@ -570,6 +591,14 @@
         resetMicUI();
       }
     };
+
+    // 会话结束后处理识别结果：复位 UI，再查询（延迟播放音频，不干扰下次识别）
+    function finishPendingQuery() {
+      var q = pendingQuery;
+      pendingQuery = null;
+      resetMicUI();
+      if (q) doQuery(q, true);
+    }
   }
 
   function startRecogInternal() {
@@ -592,6 +621,9 @@
   // 用户点击：开始监听 / 停止监听
   function startRecog() {
     if (!useVoice || listening) return;
+    // 上次识别结果若还没处理完（会话未结束），先完成处理再开始新监听
+    if (pendingQuery) finishPendingQuery();
+    if (safeStopTimer) { clearTimeout(safeStopTimer); safeStopTimer = null; }
     listening = true;
     noSpeechCount = 0;
     ignoreOnend = false;
@@ -607,6 +639,7 @@
     listening = false;
     ignoreOnend = true;
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+    if (safeStopTimer) { clearTimeout(safeStopTimer); safeStopTimer = null; }
     unlockAutoplay();
     resetMicUI();
     // iOS 兼容 workaround：stop() 不生效时，先 start() 一次再 stop()，确保会话能结束
